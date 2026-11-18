@@ -1,0 +1,11 @@
+# Dependencias para o ambiente Google Colab com GPU T4 (16 GB)
+unsloth
+torch
+transformers
+accelerate
+bitsandbytes
+triton
+tqdm
+requests
+rich
+

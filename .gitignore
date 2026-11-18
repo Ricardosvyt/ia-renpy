@@ -1,0 +1,34 @@
+# Ambientes virtuais Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# Jogos de teste e arquivos temporarios baixados
+downloads/
+extracted_games/
+temp/
+*.zip
+*.rar
+*.7z
+*.rpa
+
+# Checkpoints de treinamento e modelos locais
+models/
+checkpoints/
+*.pt
+*.bin
+*.safetensors
+*.gguf
+
+# Banco de dados local e logs
+*.db
+*.sqlite3
+*.log
+
+# VS Code e IDEs
+.vscode/
+.idea/
+.ipynb_checkpoints/
+
