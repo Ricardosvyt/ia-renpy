@@ -1,0 +1,12 @@
+# [CORRECAO PARA A CELULA 3 DO GOOGLE COLAB]
+# Substitua o conteudo da Celula 3 ("3. Instalacao de Dependencias & Unsloth") por este bloco e execute:
+
+%%capture
+!pip install unsloth_zoo
+!pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+!pip install requests tqdm rich pydantic py7zr
+
+# Verificacao de sucesso da instalacao
+import unsloth
+import unsloth_zoo
+print("[OK] Unsloth e Unsloth Zoo instalados e funcionando perfeitamente!")
