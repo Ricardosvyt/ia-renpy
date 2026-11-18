@@ -1,6 +1,7 @@
 # Dependencias para o ambiente Google Colab com GPU T4 (16 GB)
 unsloth_zoo
 unsloth
+unrpa
 torch
 transformers
 accelerate
@@ -9,3 +10,4 @@ triton
 tqdm
 requests
 rich
+datasets

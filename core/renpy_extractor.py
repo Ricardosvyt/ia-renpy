@@ -3,33 +3,40 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+from core.decompiler import DecompilerManager
+from core.tag_protector import TagProtector
+
 
 class RenpyExtractor:
     """
-    Extrator de dialogos e textos de interface de jogos Ren'Py.
-    Varre a pasta 'game/' e identifica falas de personagens, menus e strings traduziveis.
+    Extrator e analisador aprofundado de jogos Ren'Py.
+    Descompila automaticamente pacotes .rpa e arquivos compilados .rpyc,
+    identifica personagens, rotas, dialogos e gera relatorios de analise.
     """
 
-    # Padrao para falas com personagem: e "Ola mundo!" ou "narrador" "Ola!"
     RE_DIALOGUE = re.compile(r'^\s*(?:([a-zA-Z0-9_]+)\s+)?"((?:[^"\\]|\\.)*)"\s*$')
-
-    # Padrao para opcoes de menu: "Investigar quarto":
     RE_MENU_CHOICE = re.compile(r'^\s*"((?:[^"\\]|\\.)*)"\s*:\s*$')
-
-    # Padrao para blocos translate strings do Ren'Py
     RE_TRANSLATE_OLD = re.compile(r'^\s*old\s+"((?:[^"\\]|\\.)*)"\s*$')
 
     def __init__(self, game_root: Path):
         self.game_root = Path(game_root)
         self.game_dir = self.game_root / "game" if (self.game_root / "game").is_dir() else self.game_root
+        self.decompiler = DecompilerManager()
+        self.tag_protector = TagProtector()
+
+    def ensure_decompiled(self) -> None:
+        """
+        Garante que todos os pacotes .rpa sejam extraidos e todos os .rpyc descompilados para .rpy.
+        """
+        print("[EXTRATOR] Verificando descompilacao de scripts do jogo...")
+        self.decompiler.decompile_all(self.game_dir)
 
     def scan_rpy_files(self) -> List[Path]:
         """
-        Localiza todos os arquivos .rpy da pasta do jogo, ignorando a pasta de traducoes antigas.
+        Localiza todos os arquivos .rpy da pasta do jogo.
         """
         files = []
         for rpy in self.game_dir.rglob("*.rpy"):
-            # Ignorar arquivos dentro de tl/ (ja sao traducoes)
             if "tl" in rpy.parts:
                 continue
             files.append(rpy)
@@ -37,22 +44,20 @@ class RenpyExtractor:
 
     def extract_from_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """
-        Extrai falas e textos de um arquivo .rpy individual.
+        Extrai falas, menus e textos de interface de um arquivo .rpy.
         """
         extracted = []
         try:
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
         except Exception as e:
-            print(f"[AVISO] Nao foi possivel ler {file_path.name}: {e}")
+            print(f"[AVISO] Falha ao ler {file_path.name}: {e}")
             return []
 
         rel_path = file_path.relative_to(self.game_root).as_posix()
 
         for idx, line in enumerate(lines, start=1):
             stripped = line.strip()
-            
-            # Pular linhas vazias, comentarios e comandos puros de Python
             if not stripped or stripped.startswith("#") or stripped.startswith("$") or stripped.startswith("python:"):
                 continue
 
@@ -75,8 +80,6 @@ class RenpyExtractor:
             if match_diag:
                 char = match_diag.group(1) or "Narrador"
                 text = match_diag.group(2).replace(r'\"', '"')
-                
-                # Ignorar identificadores de imagem ou animacao simples
                 if text and not text.endswith((".png", ".jpg", ".webp", ".ogg", ".mp3")):
                     extracted.append({
                         "file": rel_path,
@@ -87,7 +90,7 @@ class RenpyExtractor:
                     })
                 continue
 
-            # 3. String de traducao antiga (old "...")
+            # 3. String de traducao (old "...")
             match_old = self.RE_TRANSLATE_OLD.match(line)
             if match_old:
                 text = match_old.group(1).replace(r'\"', '"')
@@ -102,16 +105,78 @@ class RenpyExtractor:
 
         return extracted
 
-    def extract_all(self) -> List[Dict[str, Any]]:
+    def analyze_and_extract(self) -> Dict[str, Any]:
         """
-        Extrai todos os dialogos e textos traduziveis de todos os arquivos .rpy do jogo.
+        Executa descompilacao completa, analisa as caracteristicas narrativas do jogo
+        e extrai todos os textos traduziveis com estatisticas detalhadas.
         """
+        self.ensure_decompiled()
         rpy_files = self.scan_rpy_files()
-        all_units = []
+        
+        all_units: List[Dict[str, Any]] = []
+        characters: Dict[str, int] = {}
+        variables_detected: set = set()
+        dialogue_count = 0
+        menu_count = 0
+        ui_count = 0
+
         for rpy in rpy_files:
             units = self.extract_from_file(rpy)
             all_units.extend(units)
-            
-        print(f"[OK] Extracao concluida: {len(all_units)} textos encontrados em {len(rpy_files)} arquivos .rpy.")
-        return all_units
+            for u in units:
+                c = u["character"]
+                characters[c] = characters.get(c, 0) + 1
+                
+                t = u["type"]
+                if t == "dialogue":
+                    dialogue_count += 1
+                elif t == "menu_choice":
+                    menu_count += 1
+                elif t == "string":
+                    ui_count += 1
 
+                # Detectar variaveis no texto original
+                vars_in_text = self.tag_protector.RE_VARS.findall(u["original_text"])
+                variables_detected.update(vars_in_text)
+
+        report = {
+            "game_name": self.game_root.name,
+            "total_files": len(rpy_files),
+            "total_units": len(all_units),
+            "dialogue_count": dialogue_count,
+            "menu_count": menu_count,
+            "ui_count": ui_count,
+            "character_stats": characters,
+            "detected_variables": sorted(list(variables_detected)),
+            "units": all_units,
+        }
+
+        # Imprimir relatorio visual no terminal
+        self.print_report(report)
+        return report
+
+    @staticmethod
+    def print_report(report: Dict[str, Any]) -> None:
+        print("\n" + "=" * 65)
+        print(f" [RELATORIO DE ANALISE DO JOGO: {report['game_name']}]")
+        print("=" * 65)
+        print(f" Arquivos de Script (.rpy): {report['total_files']}")
+        print(f" Total de Unidades Traduziveis: {report['total_units']}")
+        print(f" - Dialogos de Historia: {report['dialogue_count']}")
+        print(f" - Opcoes de Escolha (Menu): {report['menu_count']}")
+        print(f" - Textos de Sistema/UI: {report['ui_count']}")
+        print(f" Variaveis Ren'Py Detectadas: {len(report['detected_variables'])}")
+        
+        # Top 5 personagens mais ativos
+        top_chars = sorted(report["character_stats"].items(), key=lambda x: x[1], reverse=True)[:6]
+        print("\n Principais Personagens Identificados:")
+        for char, count in top_chars:
+            print(f"   * {char}: {count} falas")
+        print("=" * 65 + "\n")
+
+    def extract_all(self) -> List[Dict[str, Any]]:
+        """
+        Metodo de conveniencia compativel com a interface padrao.
+        """
+        analysis = self.analyze_and_extract()
+        return analysis["units"]
